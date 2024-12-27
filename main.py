@@ -1,5 +1,6 @@
 import psycopg2
 from config import config
+from config import load_config
 import hashlib
 import bcrypt
 
@@ -45,22 +46,68 @@ def add_new_user() :
             hashed_password = h.hexdigest()
 
             crsr = conn.cursor()
-
-            crsr.execute("SELECT COUNT(*) FROM users;")
-            user_count = crsr.fetchone()[0]
-            generated_id = user_count + 1000
+            query = "SELECT COUNT(*) FROM users;"  
+            user_count = get_rows(query)
+            if user_count == -1:
+                print("Failed to get user count. Cannot generate user ID.")
+                return
+            generated_id = user_count + 1000 
 
             sql = """INSERT INTO users (user_id, username, masterpassword) VALUES (%s, %s);"""
-            crsr.execute(sql, (user_id, username, masterpassword))
+            crsr.execute(sql, (generated_id, user_username_input, hashed_password))
             conn.commit()
             crsr.close()
-            print("User added successfully.")
+            print("User added successfully with user_id: {generated_id}")
         except (Exception, psycopg2.DatabaseError) as error:
             print(f"Error: {error}")
         finally:
-            if conn is not None:
-                conn.close()
+            conn.close()
+    else:
+        print("Database connection failed.")
+
+def get_rows(query):
+    conn = connect()
+    if conn is not None:
+        try: 
+            with conn.cursor() as crsr:
+                crsr.execute(query)
+                rows = crsr.fetchall()
+                return len(rows)
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error: {error}")
+            return -1
+        finally:
+            conn.close()
+    else:
+        print("Error: Failed to connect to the database.")
+        return -1
+
+def add_new_password():
+    conn = connect()
+    if conn is not None:
+        try:
+            user_service_input = input('Enter the service for this password. ')
+            user_service_input = input('Enter password to be stored. ')
+
+            crsr = conn.cursor()
+            query = "SELECT COUNT(*) FROM passwords;"  
+            pass_count = get_rows(query)
+            if pass_count == -1:
+                print("Failed to get pass count. Cannot generate pass ID.")
+                return
             
+
+            
+        except:
+
+
+
+
+
+
+
+
+
 if __name__ == "__main__" :
     connect()
         
