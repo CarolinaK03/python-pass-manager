@@ -1,39 +1,79 @@
 import psycopg2
 from config import config
-from config import load_config
 import hashlib
 import bcrypt
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
-
 import sys
 
 class MainWindow(QMainWindow):
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
 
-        self.setWindowTitle("Password Manager Applciation")
+        #Set up for the window
+        self.setWindowTitle("Welcome to your password manager")
+        self.setGeometry(200, 200, 800, 600)
+
+        #Set up for the vertical layout
+        central_widget = QWidget(self)
+        self.setCentralWidget(central_widget)
+        vbox = QVBoxLayout()
 
         label = QLabel("Login to an existing account or create a new account")
         label.setAlignment(Qt.AlignCenter)
 
-        login_button = QPushButton("Login")
-        login_button.setCheckable(True)
-        login_button.clicked.connect(self.login_button_clicked)
-        signup_button = QPushButton("Sign Up")
-        signup_button.setCheckable(True)
-        signup_button.clicked.connect(self.signup_button_clicked)
+        #Login Button Set Up
+        self.login_button = QPushButton("Sign Up", self)
+        self.login_button.setCheckable(True)
+        self.login_button.clicked.connect(self.login_button_clicked)
 
-        def login_button_clicked(self):
-            pass
+        #Sign Up Set Up
+        self.signup_button = QPushButton("Sign Up", self)
+        self.signup_button.setCheckable(True)
+        self.signup_button.clicked.connect(self.signup_button_clicked)
 
-        def signup_button_clicked(self):
-            pass
+        vbox.addWidget(label)
+        vbox.addWidget(self.login_button)
+        vbox.addWidget(self.signup_button)
+        central_widget.setLayout(vbox)
 
+#Login Button Capabilities
+    def login_button_clicked(self):
+        self.login_window = LoginWindow()
+        self.login_window.show()
+        
+#Sign Up Button Capabilities
+    def signup_button_clicked(self):
+        self.signup_window = SignUpWindow()
+        self.signup_window.show()
+
+
+
+class LoginWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Login")
+        self.setGeometry(150, 150, 300, 200)
+        
+        layout = QVBoxLayout()
+        label = QLabel("")
+        layout.addWidget(label)
+        self.setLayout(layout)
+
+class SignUpWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Sign Up")
+        self.setGeometry(150, 150, 300, 200)
+        
+        layout = QVBoxLayout()
+        label = QLabel("")
+        layout.addWidget(label)
+        self.setLayout(layout)
         
 
-        self.setCentralWidget(label)
+        
 
 
 app = QApplication(sys.argv)
@@ -104,16 +144,6 @@ def add_new_user() :
     else:
         print("Database connection failed.")
 
-def log_in(){
-    conn = connect()
-    if conn is not None:
-        try:
-            login_username = input('Enter your username.')
-            login_password:
-        
-        except
-
-}
 
 
 def get_rows(query):
@@ -156,8 +186,6 @@ def add_new_password():
         except (Exception, psycopg2.DatabaseError) as error:
             print(f"Error: {error}")
             return -1
-
-
 
 
 
