@@ -1,5 +1,9 @@
 import psycopg2
 from config import config
+from cryptography.fernet import Fernet
+import bcrypt
+
+
 import hashlib
 import bcrypt
 from PyQt5.QtGui import *
@@ -202,6 +206,7 @@ class LoginWindow(QWidget):
     def decrypt(self):
         username = self.username_input2.text().strip()
         entered_password = self.password_input2.text().strip()
+        user_id =""
 
         conn = None
         try:
@@ -215,7 +220,11 @@ class LoginWindow(QWidget):
                 stored_hashed_password, stored_salt = result
                 if bcrypt.checkpw(entered_password.encode(), stored_hashed_password.encode()):
                     QMessageBox.information(self, "Success", "You have been successfully logged in")
+                    if self.parent:
+                        self.parent.current_user_id = user_id
                     return True
+                
+
                 else:
                     QMessageBox.warning(self, "Error", "Your master password is incorrect. Please try again.")
                     return False
@@ -235,7 +244,7 @@ class LoginWindow(QWidget):
             return False
 
     def open_home_window(self):
-        self.home_window = PassManagerWindow(parent=self)
+        self.home_window = PassManagerWindow(parent=self, user_id=self.parent.current_user_id)
         self.home_window.show()
         self.close()
 
@@ -245,9 +254,11 @@ class LoginWindow(QWidget):
         self.close()
 
 class PassManagerWindow(QWidget):
-    def __init__(self, parent=None): 
+    def __init__(self, parent=None, user_id=None):
         super().__init__()
         self.parent = parent  
+        self.user_id = user_id
+
         self.setWindowTitle("Password Manager Menu")
         self.setGeometry(200, 200, 800, 600)
         
@@ -257,26 +268,59 @@ class PassManagerWindow(QWidget):
         self.home_button.setCheckable(True)
         self.home_button.clicked.connect(self.add_account_clicked)
         layout.addWidget(self.home_button)
-        self.setLayout(layout)
 
-        self.home_button = QPushButton("Check stored accounts", self)
+        """self.home_button = QPushButton("Check stored accounts", self)
         self.home_button.setCheckable(True)
         self.home_button.clicked.connect(self.check_accounts_clicked)
-        layout.addWidget(self.home_button)
-        self.setLayout(layout)
+        layout.addWidget(self.home_button)"""
 
         self.logout_button = QPushButton("Log out", self)
         self.logout_button.setCheckable(True)
         self.logout_button.clicked.connect(self.logout_clicked)
         layout.addWidget(self.logout_button)
         self.setLayout(layout)
+
+    def decrypt_password(self, encrypted_password, service_name):
+        if not encrypted_password or not service_name:
+            print("Service does not exist, or has no password")
+            return None
+        
+      
+
+        
+        conn = None
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+
+            crsr.execute("SELECT key_value FROM keys WHERE user_id = %s AND service_name = %s;",
+                (self.user_id, service_name))
+            key_result = crsr.fetchone()
+
+            if not key_result:
+                print("Error: A key does not exist for this service")
+                return None
+            
+            encryption_key = key_result[0].encode()  
+            cipher = Fernet(encryption_key)  
+            decrypted_password = cipher.decrypt(encrypted_password.encode()).decode()
+            return decrypted_password
+        
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error: {error}")
+            return None  
+
+        finally:
+            if conn:
+                conn.close() 
     
     def add_account_clicked(self):
         self.addAcc_window = AddAccountWindow(parent=self)
         self.addAcc_window.show()
         self.close()
 
-    def add_account_clicked(self):
+    def check_account_clicked(self):
         self.addAcc_window = CheckAccountsWindow(parent=self)
         self.addAcc_window.show()
         self.close()
@@ -287,33 +331,169 @@ class PassManagerWindow(QWidget):
         self.close()
 
 class AddAccountWindow(QWidget):
-    def __init__(self, parent=None): 
+    def __init__(self, parent=None, user_id=None): 
         super().__init__()
         self.parent = parent  
+        self.user_id = user_id
         self.setWindowTitle("Add an account")
         self.setGeometry(200, 200, 800, 600)
         
         layout = QVBoxLayout()
 
-        username_label2 = QLabel("Username:")
-        self.username_input2 = QLineEdit()
-        self.username_input2.setPlaceholderText("Enter your username")
-        layout.addWidget(username_label2)
-        layout.addWidget(self.username_input2)
+        service_input = QLabel("Enter a name for the service you would like to store information for:")
+        self.service_input = QLineEdit()
+        self.service_input.setPlaceholderText("Service Name ex. Facebook")
+        layout.addWidget(service_input)
+        layout.addWidget(self.service_input)
 
-        password_label2 = QLabel("Password:")
-        self.password_input2 = QLineEdit()
-        self.password_input2.setPlaceholderText("Password")
-        self.password_input2.setEchoMode(QLineEdit.Password)
-        layout.addWidget(password_label2)
-        layout.addWidget(self.password_input2)
+        """Might do something with this later so when you open the service password manager can auto input your passsword?"""
+        service_link_input = QLabel("Enter a link to the serivce (Optional)")
+        self.service_link_input = QLineEdit()
+        self.service_link_input.setPlaceholderText("Service Name ex. Facebook")
+        layout.addWidget(service_link_input)
+        layout.addWidget(self.service_link_input)
+
+        service_username = QLabel("Username:")
+        self.service_username = QLineEdit()
+        self.service_username.setPlaceholderText("Enter your username")
+        layout.addWidget(service_username)
+        layout.addWidget(self.service_username)
+
+        service_password = QLabel("Password:")
+        self.service_password = QLineEdit()
+        self.service_password.setPlaceholderText("Password")
+        self.service_password.setEchoMode(QLineEdit.Password)
+        layout.addWidget(service_password)
+        layout.addWidget(self.service_password)
 
         self.addAcc_button = QPushButton("Add Account", self)
         self.addAcc_button.clicked.connect(self.addAcc_button_clicked)
+
         layout.addWidget(self.addAcc_button)
         self.setLayout(layout)
 
+    
+    def check_for_service(self):
+        service_name = self.service_input.text().strip()
+
+        if not service_name:
+            return False
+            
+        conn = None
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+            query = "SELECT 1 FROM accounts WHERE service_name = %s AND user_id = %s;"
+            crsr.execute(query, (service_name, self.user_id))
+            result = crsr.fetchone()
+
+            if result:
+                QMessageBox.warning(self, "This service already added, would you like to edit its stored information?")
+                return False
+            else:                   
+                return True
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error: {error}")
+            return False  
+        finally:
+            if conn:
+                conn.close()
+
+    def generate_key(self):
+        service_name = self.service_input.text().strip()
+
+        if not service_name:
+            print("Error; No service name")
+            return False
+        
+        ENCRYPTION_KEY = Fernet.generate_key()
+
+        conn = None
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+            query = "SELECT service_id FROM accounts WHERE service_name = %s AND user_id = %s;"
+            crsr.execute(query, (service_name, self.user_id))
+            result = crsr.fetchone()
+            service_id = result[0]  
+            query = """INSERT INTO keys (user_id, service_id, key_value) VALUES (%s, %s, %s)"""
+            crsr.execute(query, (self.user_id, service_id, ENCRYPTION_KEY.decode()))  
+            conn.commit()  
+            return True
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error: {error}")
+            return False  
+        finally:
+            if conn:
+                conn.close() 
+
+    def encrypt_password(self):
+        service_password = self.service_password.text().strip()
+        service_name = self.service_input.text().strip()
+        if not service_password:
+            print("Password cant be empty")
+            return None  
+
+        conn = None
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+
+            crsr.execute("SELECT key_value FROM keys WHERE user_id = %s AND service_name = %s;",
+                     (self.user_id, service_name))
+            key_result = crsr.fetchone()
+
+            if not key_result:
+                print("No encryption key found for this service")
+
+            encryption_key = key_result[0].encode()  
+            cipher = Fernet(encryption_key)  
+            encrypted_password = cipher.encrypt(service_password.encode()).decode()
+            return encrypted_password
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error: {error}")
+            return None  
+
+        finally:
+            if conn:
+                conn.close() 
+
     def addAcc_button_clicked(self):
+        conn = None
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+
+            if self.check_for_service(): 
+                query = "INSERT INTO accounts (user_id, username, service_name, service_password) VALUES (%s, %s, %s, %s);"
+                encrypted_password = self.encrypt_password()  
+
+                if not encrypted_password:
+                    print("Error: Could not encrypt password")
+                    return
+
+                crsr.execute(query, (self.user_id, self.service_username.text().strip(), self.service_input.text().strip(), encrypted_password))
+                conn.commit()
+
+                QMessageBox.information(self, "Success", "Account successfully added.")
+                
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error: {error}")
+
+        finally:
+            if conn:
+                conn.close()
+    
+   
+
+
+
 
         
 
@@ -382,7 +562,7 @@ def add_new_user() :
                 return
             generated_id = user_count + 1000 
 
-            sql = """INSERT INTO users (user_id, username, masterpassword) VALUES (%s, %s);"""
+            sql = """INSERT INTO users (user_id, user_id, masterpassword) VALUES (%s, %s);"""
             crsr.execute(sql, (generated_id, user_username_input, hashed_password))
             conn.commit()
             crsr.close()
@@ -393,23 +573,6 @@ def add_new_user() :
             conn.close()
     else:
         print("Database connection failed.")
-
-def get_rows(query):
-    conn = connect()
-    if conn is not None:
-        try: 
-            with conn.cursor() as crsr:
-                crsr.execute(query)
-                rows = crsr.fetchall()
-                return len(rows)
-        except (Exception, psycopg2.DatabaseError) as error:
-            print(f"Error: {error}")
-            return -1
-        finally:
-            conn.close()
-    else:
-        print("Error: Failed to connect to the database.")
-        return -1
 
 def add_new_password():
     conn = connect()
@@ -482,4 +645,15 @@ CREATE TABLE password_history (
     FOREIGN KEY (password_id) REFERENCES passwords(password_id)
 );
 
+CREATE TABLE accounts (
+    service_id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    service_name VARCHAR(255) NOT NULL,
+    service_username VARCHAR(255) NOT NULL,
+    link VARCHAR(255) NULL,
+    password VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
 """
