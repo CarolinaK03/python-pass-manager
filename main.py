@@ -434,13 +434,13 @@ class CheckAccountsWindow(QWidget):
             params = config()
             conn = psycopg2.connect(**params)
             crsr = conn.cursor()
-            query = "SELECT service_id, service_name, service_username, password FROM accounts WHERE user_id = %s"
+            query = "SELECT service_id, service_name, service_username FROM accounts WHERE user_id = %s"
             crsr.execute(query, (self.user_id,))
             rows = crsr.fetchall()
 
             self.table.setRowCount(len(rows))
-            self.table.setColumnCount(4)
-            self.table.setHorizontalHeaderLabels(["Servicee ID", "Service", "Username", "Password", "Created At"])
+            self.table.setColumnCount(3)
+            self.table.setHorizontalHeaderLabels(["Servicee ID", "Service", "Username", "Created At"])
 
             for row_idx, row in enumerate(rows):
                 for col_idx, value in enumerate(row):
