@@ -37,21 +37,18 @@ class MainWindow(QMainWindow):
         vbox.addWidget(self.signup_button)
         central_widget.setLayout(vbox)
 
-    #Login Button Capabilities
     def login_button_clicked(self):
         self.login_window = LoginWindow(self)   
         self.login_window.show()
         self.close()
 
-    #Sign Up Button Capabilities
     def sign_button_clicked(self):
         self.signup_window = SignUpWindow(self)
         self.signup_window.show()
         self.close()
 
-class SignUpWindow(QWidget): #Inside paranthesis is what it inherits from
+class SignUpWindow(QWidget): 
     def __init__(self, parent=None):
-        #the constructor method of the class; init is called automatically when an instance of SignUpWindow is created.
         super().__init__()
         self.parent = parent  
         self.setWindowTitle("Sign Up")
@@ -59,7 +56,6 @@ class SignUpWindow(QWidget): #Inside paranthesis is what it inherits from
 
         layout = QVBoxLayout()
 
-        #Username
         username_label = QLabel("Create a username:")
         self.user_available_label = QLabel("") 
         layout.addWidget(self.user_available_label)
@@ -70,7 +66,6 @@ class SignUpWindow(QWidget): #Inside paranthesis is what it inherits from
         layout.addWidget(self.username_input)
         self.username_input.textChanged.connect(self.check_username_avail)
 
-        #Password
         password_label = QLabel("Enter a secure master password")
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("Password")
@@ -78,14 +73,12 @@ class SignUpWindow(QWidget): #Inside paranthesis is what it inherits from
         layout.addWidget(password_label)
         layout.addWidget(self.password_input)
 
-        #Sign Up Button
         self.sign_button = QPushButton("Sign Up", self)
         self.sign_button.setEnabled(False)  
         self.password_input.textChanged.connect(self.validate_inputs)  
         self.sign_button.clicked.connect(self.sign_button_clicked)
         layout.addWidget(self.sign_button)
 
-        #Home Button
         self.home_button = QPushButton("Home", self)
         self.home_button.clicked.connect(self.home_button_clicked)
         layout.addWidget(self.home_button)
@@ -138,6 +131,7 @@ class SignUpWindow(QWidget): #Inside paranthesis is what it inherits from
     
     def sign_button_clicked(self):
         username = self.username_input.text().strip()
+
         if not self.check_username_avail(): 
             QMessageBox.warning(self, "Error", "Username is unavailable.")
             return
@@ -154,11 +148,15 @@ class SignUpWindow(QWidget): #Inside paranthesis is what it inherits from
             params = config()
             conn = psycopg2.connect(**params)
             crsr = conn.cursor()
-            query = "INSERT INTO users (username, masterpassword, created_at, salt) VALUES (%s, %s, %s, %s);"
+            query = "INSERT INTO users (username, masterpassword, created_at, salt) VALUES (%s, %s, %s, %s) RETURNING user_id;"
             crsr.execute(query, (username, hashed_password, created_at, salt))
+            user_id = crsr.fetchone()[0]  
             conn.commit()
+
             QMessageBox.information(self, "Success", "Account created successfully")
-            self.open_home_window()
+            print("User signed up with ID:", user_id)  
+
+            self.open_home_window(user_id)  
             self.close()  
         except (Exception, psycopg2.DatabaseError) as error:
             QMessageBox.warning(self, "Error", f"Database error: {error}")
@@ -166,10 +164,13 @@ class SignUpWindow(QWidget): #Inside paranthesis is what it inherits from
             if conn:
                 conn.close()
 
-    def open_home_window(self):
-        self.home_window = PassManagerWindow(parent=self)
+    def open_home_window(self, user_id):
+        """ Opens the PassManagerWindow with the correct user_id """
+        self.home_window = PassManagerWindow(parent=self, user_id=user_id)
         self.home_window.show()
         self.close()
+
+                
 
 class LoginWindow(QWidget):
     def __init__(self, parent=None): 
@@ -236,6 +237,25 @@ class LoginWindow(QWidget):
                 conn.close()
 
     def enter_system_button_clicked(self):
+        username = self.username_input2.text().strip()
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+            crsr.execute("SELECT user_id FROM users WHERE username = %s;", (username,))
+            result = crsr.fetchone()  
+
+            if result:
+                self.user_id = result[0]  
+                print("Opening menu window with user ID:", self.user_id)     
+            else:
+                QMessageBox.warning(self, "Error", "This username does not exist.")
+                return False
+
+        finally:
+            if conn:
+                conn.close()
+
         if self.decrypt():
             QMessageBox.information(self, "Success", "Welcome!")
             self.open_home_window()
@@ -244,7 +264,7 @@ class LoginWindow(QWidget):
             return False
 
     def open_home_window(self):
-        self.home_window = PassManagerWindow(parent=self, user_id=self.parent.current_user_id)
+        self.home_window = PassManagerWindow(parent=self, user_id=self.user_id) 
         self.home_window.show()
         self.close()
 
@@ -258,6 +278,7 @@ class PassManagerWindow(QWidget):
         super().__init__()
         self.parent = parent  
         self.user_id = user_id
+        print("User ID", self.user_id)
 
         self.setWindowTitle("Password Manager Menu")
         self.setGeometry(200, 200, 800, 600)
@@ -268,11 +289,11 @@ class PassManagerWindow(QWidget):
         self.home_button.setCheckable(True)
         self.home_button.clicked.connect(self.add_account_clicked)
         layout.addWidget(self.home_button)
-
-        """self.home_button = QPushButton("Check stored accounts", self)
-        self.home_button.setCheckable(True)
-        self.home_button.clicked.connect(self.check_accounts_clicked)
-        layout.addWidget(self.home_button)"""
+        
+        self.change_button = QPushButton("Check stored accounts", self)
+        self.change_button.setCheckable(True)
+        self.change_button.clicked.connect(self.check_accounts_clicked)
+        layout.addWidget(self.change_button)
 
         self.logout_button = QPushButton("Log out", self)
         self.logout_button.setCheckable(True)
@@ -285,8 +306,6 @@ class PassManagerWindow(QWidget):
             print("Service does not exist, or has no password")
             return None
         
-      
-
         
         conn = None
         try:
@@ -316,19 +335,165 @@ class PassManagerWindow(QWidget):
                 conn.close() 
     
     def add_account_clicked(self):
-        self.addAcc_window = AddAccountWindow(parent=self)
+        self.addAcc_window = AddAccountWindow(parent=self, user_id=self.user_id)        
         self.addAcc_window.show()
         self.close()
 
-    def check_account_clicked(self):
-        self.addAcc_window = CheckAccountsWindow(parent=self)
-        self.addAcc_window.show()
+    def check_accounts_clicked(self):
+        self.checkAccs_window = CheckAccountsWindow(parent=self, user_id=self.user_id)   
+        self.checkAccs_window.show()
         self.close()
 
     def logout_clicked(self):
         if self.parent:
             self.parent.show()
         self.close()
+
+class CheckAccountsWindow(QWidget):
+    def __init__(self, parent=None, user_id=None): 
+        super().__init__()
+        self.parent = parent  
+        self.user_id = user_id
+        self.setWindowTitle("Check your accounts")
+        self.setGeometry(200, 200, 800, 600)
+
+        layout = QVBoxLayout()
+
+        self.table = QTableWidget()
+        layout.addWidget(self.table)
+
+        choose_service_label = QLabel("Enter the service ID for the service you want to access:")
+        self.choose_service = QLineEdit()
+        self.choose_service.setPlaceholderText("Service ID")
+
+        self.choose_service_button = QPushButton("Get Password")
+        self.choose_service_button.clicked.connect(self.choose_service_clicked)
+
+        self.remove_service_button = QPushButton("Remove Service")
+        self.remove_service_button.clicked.connect(self.remove_service_clicked)
+
+        self.back_button = QPushButton("Home")
+        self.back_button.clicked.connect(self.back_button_clicked)
+
+        layout.addWidget(choose_service_label)
+        layout.addWidget(self.choose_service)
+        layout.addWidget(self.choose_service_button)
+        layout.addWidget(self.remove_service_button)
+
+        layout.addWidget(self.back_button)
+
+        self.setLayout(layout)
+
+        self.load_accs()  
+
+    def choose_service_clicked(self):
+        service_id = self.choose_service.text().strip() 
+        if not service_id:
+            QMessageBox.warning(self, "Error", "Please enter a valid Service ID.")
+            return
+
+        conn = None
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+
+            crsr.execute("SELECT key_value FROM keys WHERE user_id = %s AND service_id = %s;", (self.user_id, service_id))
+            key_result = crsr.fetchone()
+
+            if not key_result:
+                QMessageBox.warning(self, "Error", "No key found for this service.")
+                return
+
+            encryption_key = key_result[0].encode()
+
+            crsr.execute("SELECT password FROM accounts WHERE user_id = %s AND service_id = %s;", (self.user_id, service_id))
+            encrypted_password_result = crsr.fetchone()
+
+            if not encrypted_password_result:
+                QMessageBox.warning(self, "Error", "No encrypted password found for this service.")
+                return
+
+            encrypted_password = encrypted_password_result[0].encode()
+            cipher = Fernet(encryption_key)
+            decrypted_password = cipher.decrypt(encrypted_password).decode()
+
+            QMessageBox.information(self, "Decrypted Password", f"Your password: {decrypted_password}")
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            QMessageBox.critical(self, "Error", f"Error while decrypting password: {error}")
+
+        finally:
+            if conn:
+                conn.close()
+
+
+    def load_accs(self):
+        conn = None
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+            query = "SELECT service_id, service_name, service_username, password FROM accounts WHERE user_id = %s"
+            crsr.execute(query, (self.user_id,))
+            rows = crsr.fetchall()
+
+            self.table.setRowCount(len(rows))
+            self.table.setColumnCount(4)
+            self.table.setHorizontalHeaderLabels(["Servicee ID", "Service", "Username", "Password", "Created At"])
+
+            for row_idx, row in enumerate(rows):
+                for col_idx, value in enumerate(row):
+                    self.table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error: {error}")
+            return False  
+        finally:
+            if conn:
+                conn.close()
+    
+    def remove_service_clicked(self):
+        service_id = self.choose_service.text().strip()
+        if not service_id:
+            QMessageBox.warning(self, "Error", "Please enter a valid Service ID to remove.")
+            return
+
+        conn = None
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+
+            crsr.execute("SELECT * FROM accounts WHERE user_id = %s AND service_id = %s;", (self.user_id, service_id))
+            service_exists = crsr.fetchone()
+
+            if not service_exists:
+                QMessageBox.warning(self, "Error", "This service does not exist in your account.")
+                return
+
+            crsr.execute("DELETE FROM accounts WHERE user_id = %s AND service_id = %s;", (self.user_id, service_id))
+            crsr.execute("DELETE FROM keys WHERE user_id = %s AND service_id = %s;", (self.user_id, service_id))
+
+            conn.commit()  
+
+            QMessageBox.information(self, "Success", "Service removed successfully.")
+            self.load_accs()  
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            QMessageBox.critical(self, "Error", f"Error while removing service: {error}")
+
+        finally:
+            if conn:
+                conn.close()
+
+    def back_button_clicked(self):
+        self.passManagerWindow = PassManagerWindow(user_id=self.user_id)
+        self.passManagerWindow.show()
+        self.close()
+
+    
+    
 
 class AddAccountWindow(QWidget):
     def __init__(self, parent=None, user_id=None): 
@@ -346,7 +511,6 @@ class AddAccountWindow(QWidget):
         layout.addWidget(service_input)
         layout.addWidget(self.service_input)
 
-        """Might do something with this later so when you open the service password manager can auto input your passsword?"""
         service_link_input = QLabel("Enter a link to the serivce (Optional)")
         self.service_link_input = QLineEdit()
         self.service_link_input.setPlaceholderText("Service Name ex. Facebook")
@@ -359,26 +523,30 @@ class AddAccountWindow(QWidget):
         layout.addWidget(service_username)
         layout.addWidget(self.service_username)
 
-        service_password = QLabel("Password:")
-        self.service_password = QLineEdit()
-        self.service_password.setPlaceholderText("Password")
-        self.service_password.setEchoMode(QLineEdit.Password)
-        layout.addWidget(service_password)
-        layout.addWidget(self.service_password)
-
         self.addAcc_button = QPushButton("Add Account", self)
         self.addAcc_button.clicked.connect(self.addAcc_button_clicked)
+
+        self.back_button = QPushButton("Home", self)
+        self.back_button.clicked.connect(self.back_button_clicked)
 
         layout.addWidget(self.addAcc_button)
         self.setLayout(layout)
 
-    
+    def back_button_clicked(self):
+        self.passManagerWindow = PassManagerWindow(user_id=self.user_id)
+        self.passManagerWindow.show()
+        self.close()
+
     def check_for_service(self):
+        if not self.user_id:
+            QMessageBox.warning(self, "Error", "User ID is not available.")
+            return False
+
         service_name = self.service_input.text().strip()
 
         if not service_name:
             return False
-            
+
         conn = None
         try:
             params = config()
@@ -400,14 +568,135 @@ class AddAccountWindow(QWidget):
         finally:
             if conn:
                 conn.close()
+    
+    
+    def addAcc_button_clicked(self):
+        conn = None
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+            print("User ID:", self.user_id)
+            if self.check_for_service(): 
+                if not self.user_id:
+                    QMessageBox.warning(self, "Error", "User ID is not available.")
+                    return
 
-    def generate_key(self):
-        service_name = self.service_input.text().strip()
+                query = """
+                    INSERT INTO accounts (user_id, service_username, service_name) 
+                    VALUES (%s, %s, %s) 
+                    RETURNING service_id;
+                """
+                crsr.execute(query, (self.user_id, self.service_username.text().strip(), self.service_input.text().strip()))
+                service_id = crsr.fetchone()[0]
 
-        if not service_name:
-            print("Error; No service name")
-            return False
+                conn.commit()
+                QMessageBox.information(self, "Success", "Add your security information.")
+                self.addSecurityInfoWindow = SecurityInformationWindow(
+                    parent=self, 
+                    user_id=self.user_id, 
+                    service_id=service_id, 
+                    service_name=self.service_input.text().strip(),
+                    service_username=self.service_username.text().strip()
+                )
+                self.addSecurityInfoWindow = SecurityInformationWindow(
+                    parent=self, 
+                    user_id=self.user_id, 
+                    service_id=service_id, 
+                    service_name=self.service_input.text().strip(),
+                    service_username=self.service_username.text().strip() 
+                )
+                self.addSecurityInfoWindow.show()
+                self.close()
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error: {error}")
+        finally:
+            if conn:
+                conn.close()
+ 
+class SecurityInformationWindow(QWidget):
+    def __init__(self, parent=None, user_id=None, service_id=None, service_name=None, service_username=None): 
+        super().__init__()
+        self.parent = parent  
+        self.user_id = user_id
+        self.service_id = service_id
+        self.service_name = service_name
+        self.service_username = service_username
+        self.setWindowTitle("Add Security Information")
+        self.setGeometry(200, 200, 800, 600)
         
+        layout = QVBoxLayout()
+        service_password = QLabel("Password:")
+        self.service_password = QLineEdit()
+        self.service_password.setPlaceholderText("Password")
+        self.service_password.setEchoMode(QLineEdit.Password)
+        layout.addWidget(service_password)
+        layout.addWidget(self.service_password)
+        print(f"Password:", {self.service_password.text()})
+
+        self.addPass_button = QPushButton("Add Password", self)
+        self.addPass_button.clicked.connect(self.addPass_button_clicked)
+        layout.addWidget(self.addPass_button)
+        self.setLayout(layout)
+        print(f"Password:", {self.service_password.text()})
+
+    def encrypt_password(self):
+        service_password = self.service_password.text().strip()
+
+        service_name = self.service_name  
+        if not service_password:
+            print("Password can't be empty")
+            return None  
+        if not service_name:
+            print("Service name can't be empty")
+            return None  
+
+        conn = None
+        try:
+            params = config()
+            conn = psycopg2.connect(**params)
+            crsr = conn.cursor()
+
+            print(f"user_id type: {type(self.user_id)}")
+            print(f"service_id type: {type(self.service_id)}")
+
+            crsr.execute("SELECT key_value FROM keys WHERE user_id = %s AND service_id = %s;", 
+                        (str(self.user_id), str(self.service_id)))  
+            key_result = crsr.fetchone()
+
+            if not key_result:
+                self.generate_key()
+                print("Key generated")
+                
+                crsr.execute("SELECT key_value FROM keys WHERE user_id = %s AND service_id = %s;", 
+                            (str(self.user_id), str(self.service_id)))  
+                key_result = crsr.fetchone()
+
+            if key_result:
+                key = key_result[0]
+                encryption_key = key.encode()
+                cipher = Fernet(encryption_key)
+                encrypted_password = cipher.encrypt(service_password.encode()).decode()
+                print(f"Key: {key}")
+                print(f"Encrypted password: {encrypted_password}")
+                return encrypted_password
+            else:
+                print("No key found in the database.")
+                return None
+
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(f"Error: {error}")
+            return None  
+        finally:
+            if conn:
+                conn.close()
+        
+    def generate_key(self):
+        if not self.service_name:
+            print("Error: No service name")
+            return False
+            
         ENCRYPTION_KEY = Fernet.generate_key()
 
         conn = None
@@ -415,27 +704,25 @@ class AddAccountWindow(QWidget):
             params = config()
             conn = psycopg2.connect(**params)
             crsr = conn.cursor()
-            query = "SELECT service_id FROM accounts WHERE service_name = %s AND user_id = %s;"
-            crsr.execute(query, (service_name, self.user_id))
-            result = crsr.fetchone()
-            service_id = result[0]  
+
             query = """INSERT INTO keys (user_id, service_id, key_value) VALUES (%s, %s, %s)"""
-            crsr.execute(query, (self.user_id, service_id, ENCRYPTION_KEY.decode()))  
+            crsr.execute(query, (self.user_id, self.service_id, ENCRYPTION_KEY.decode()))  
+            print("Key generated successfully:", ENCRYPTION_KEY.decode())
             conn.commit()  
             return True
         except (Exception, psycopg2.DatabaseError) as error:
-            print(f"Error: {error}")
+            print(f"Error while generating key: {error}")
             return False  
         finally:
             if conn:
                 conn.close() 
 
-    def encrypt_password(self):
-        service_password = self.service_password.text().strip()
-        service_name = self.service_input.text().strip()
-        if not service_password:
-            print("Password cant be empty")
-            return None  
+    def addPass_button_clicked(self):
+        encrypted_password = self.encrypt_password()
+
+        if not encrypted_password:
+            print("Error: Could not encrypt password")
+            return
 
         conn = None
         try:
@@ -443,65 +730,21 @@ class AddAccountWindow(QWidget):
             conn = psycopg2.connect(**params)
             crsr = conn.cursor()
 
-            crsr.execute("SELECT key_value FROM keys WHERE user_id = %s AND service_name = %s;",
-                     (self.user_id, service_name))
-            key_result = crsr.fetchone()
+            query = """UPDATE accounts SET password = %s WHERE service_id = %s AND user_id = %s"""
+            crsr.execute(query, (encrypted_password, self.service_id, self.user_id))
+            conn.commit()
+            print("Password saved successfully")
+            QMessageBox.information(self, "Success", "Password added successfully!")
 
-            if not key_result:
-                print("No encryption key found for this service")
-
-            encryption_key = key_result[0].encode()  
-            cipher = Fernet(encryption_key)  
-            encrypted_password = cipher.encrypt(service_password.encode()).decode()
-            return encrypted_password
+            self.passManagerWindow = PassManagerWindow(user_id=self.user_id)
+            self.passManagerWindow.show()
+            self.close()
 
         except (Exception, psycopg2.DatabaseError) as error:
-            print(f"Error: {error}")
-            return None  
-
-        finally:
-            if conn:
-                conn.close() 
-
-    def addAcc_button_clicked(self):
-        conn = None
-        try:
-            params = config()
-            conn = psycopg2.connect(**params)
-            crsr = conn.cursor()
-
-            if self.check_for_service(): 
-                query = "INSERT INTO accounts (user_id, username, service_name, service_password) VALUES (%s, %s, %s, %s);"
-                encrypted_password = self.encrypt_password()  
-
-                if not encrypted_password:
-                    print("Error: Could not encrypt password")
-                    return
-
-                crsr.execute(query, (self.user_id, self.service_username.text().strip(), self.service_input.text().strip(), encrypted_password))
-                conn.commit()
-
-                QMessageBox.information(self, "Success", "Account successfully added.")
-                
-        except (Exception, psycopg2.DatabaseError) as error:
-            print(f"Error: {error}")
-
+            print(f"Error while saving password: {error}")
         finally:
             if conn:
                 conn.close()
-    
-   
-
-
-
-
-        
-
-    
-
-
-
-
         
 
 
@@ -542,61 +785,6 @@ def connect():
 
     return connection
 
-def add_new_user() :
-    conn = connect()
-    if conn is not None:
-        try:
-            salt = bcrypt.gensalt()
-            user_username_input = input('Enter a username.')
-            user_password_input = input('Enter a secure, unique master password that you will remember. This will be used access your password vault, and it will not be stored. ')
-            user_salted_password = user_password_input.encode() + salt
-            h = hashlib.new("SHA256")
-            h.update(user_salted_password)
-            hashed_password = h.hexdigest()
-
-            crsr = conn.cursor()
-            query = "SELECT COUNT(*) FROM users;"  
-            user_count = get_rows(query)
-            if user_count == -1:
-                print("Failed to get user count. Cannot generate user ID.")
-                return
-            generated_id = user_count + 1000 
-
-            sql = """INSERT INTO users (user_id, user_id, masterpassword) VALUES (%s, %s);"""
-            crsr.execute(sql, (generated_id, user_username_input, hashed_password))
-            conn.commit()
-            crsr.close()
-            print("User added successfully with user_id: {generated_id}")
-        except (Exception, psycopg2.DatabaseError) as error:
-            print(f"Error: {error}")
-        finally:
-            conn.close()
-    else:
-        print("Database connection failed.")
-
-def add_new_password():
-    conn = connect()
-    if conn is not None:
-        try:
-            service_input = input('Enter the service for this password. ')
-            password_input = input('Enter password to be stored. ')
-
-            crsr = conn.cursor()
-            query = "SELECT COUNT(*) FROM passwords;"  
-            pass_count = get_rows(query)
-            if pass_count == -1:
-                print("Failed to get pass count. Cannot generate pass ID.")
-                return
-            
-            sql = """INSERT INTO passwords (user_id, username, masterpassword) VALUES (%s, %s);"""
-            crsr.execute(sql, (pass_count, service_input, password_input, ))
-            conn.commit()
-            crsr.close()
-            print("User added successfully with user_id: {generated_id}")
-
-        except (Exception, psycopg2.DatabaseError) as error:
-            print(f"Error: {error}")
-            return -1
 
 
 
